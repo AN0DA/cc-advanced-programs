@@ -17,7 +17,7 @@ local function getInstalledVersion(folder)
         local file = fs.open(versionFilePath, "r")
         local version = file.readAll()
         file.close()
-        return version
+        return version:match("^%s*(.-)%s*$")  -- Trim any whitespace
     else
         return nil
     end
@@ -30,7 +30,7 @@ local function getLatestVersion(folder)
     if response then
         local version = response.readAll()
         response.close()
-        return version
+        return version:match("^%s*(.-)%s*$")  -- Trim any whitespace
     else
         return nil
     end
@@ -98,7 +98,11 @@ local function displayMenu()
     for i, func in ipairs(functionsList) do
         local installedVersion = getInstalledVersion(func.folder)
         term.setCursorPos(math.floor((width - #func.name - 3) / 2), y)
-        print("[" .. i .. "] " .. func.name .. (installedVersion and " (Installed: " .. installedVersion .. ")" or ""))
+        if installedVersion then
+            print("[" .. i .. "] " .. func.name .. " (Installed: " .. installedVersion .. ")")
+        else
+            print("[" .. i .. "] " .. func.name)
+        end
         y = y + 2
     end
 
@@ -125,7 +129,7 @@ local function displayProgressBar(percentage, width)
 end
 
 -- Function to download a folder recursively from the GitHub repo
-local function downloadFolder(baseUrl, folder, targetPath, version)
+local function downloadFolder(baseUrl, folder, targetPath)
     local url = baseUrl .. folder .. "/"
     local response = http.get(url .. "list.txt")  -- Assuming you have a list.txt in each folder that lists all files
     if response then
@@ -157,9 +161,15 @@ local function downloadFolder(baseUrl, folder, targetPath, version)
         end
 
         -- Write the version file
-        local versionFile = fs.open(fs.combine(targetPath, "version.txt"), "w")
-        versionFile.write(version)
-        versionFile.close()
+        local latestVersion = getLatestVersion(folder)
+        if latestVersion then
+            local versionFile = fs.open(fs.combine(targetPath, "version.txt"), "w")
+            versionFile.write(latestVersion)
+            versionFile.close()
+        else
+            print("Failed to retrieve version information. Installation may be incomplete.")
+            return false
+        end
 
         print("\nDownload completed successfully.")
         return true
@@ -182,6 +192,23 @@ local function displayError(message)
     term.setTextColor(colors.white)
 end
 
+-- Function to prompt for installation
+local function promptInstall(functionName)
+    term.clear()
+    local width, height = term.getSize()
+    local message = functionName .. " is not installed. Do you want to download it? (Y/n)"
+    
+    term.setCursorPos(math.floor((width - #message) / 2), math.floor(height / 2))
+    term.setTextColor(colors.yellow)
+    print(message)
+    term.setTextColor(colors.white)
+    
+    term.setCursorPos(math.floor(width / 2) - 1, math.floor(height / 2) + 1)
+    local input = read()
+    
+    return input:lower() ~= "n"  -- Default to "yes" if the input is empty or not "n"
+end
+
 -- Main loop
 while true do
     displayMenu()
@@ -197,22 +224,13 @@ while true do
 
         local installedVersion = getInstalledVersion(selectedFunction.folder)
         if not installedVersion then
-            -- If installation is incomplete or corrupted
-            displayError("Installation Incomplete or Corrupted")
-            print("\n1. Reinstall " .. selectedFunction.name)
-            print("2. Uninstall " .. selectedFunction.name)
-            print("0. Back")
-            local action = tonumber(read())
-
-            if action == 1 then
-                print("Reinstalling " .. selectedFunction.name .. "...")
-                local success = downloadFolder(repoUrl, selectedFunction.folder, targetFolder, selectedFunction.version)
+            -- If the program is not installed
+            if promptInstall(selectedFunction.name) then
+                print("Installing " .. selectedFunction.name .. "...")
+                local success = downloadFolder(repoUrl, selectedFunction.folder, targetFolder)
                 if not success then
-                    print("Reinstallation failed.")
+                    print("Installation failed.")
                 end
-            elseif action == 2 then
-                print("Uninstalling " .. selectedFunction.name .. "...")
-                uninstallProgram(selectedFunction.folder)
             end
         else
             -- If installation is complete
@@ -229,7 +247,7 @@ while true do
 
             if action == 1 then
                 print("Reinstalling " .. selectedFunction.name .. "...")
-                local success = downloadFolder(repoUrl, selectedFunction.folder, targetFolder, selectedFunction.version)
+                local success = downloadFolder(repoUrl, selectedFunction.folder, targetFolder)
                 if not success then
                     print("Reinstallation failed.")
                 end
@@ -240,7 +258,7 @@ while true do
                 print("Checking for updates for " .. selectedFunction.name .. "...")
                 if checkForUpdates(selectedFunction.name, installedVersion, selectedFunction.folder) then
                     print("Updating " .. selectedFunction.name .. "...")
-                    local success = downloadFolder(repoUrl, selectedFunction.folder, targetFolder, selectedFunction.version)
+                    local success = downloadFolder(repoUrl, selectedFunction.folder, targetFolder)
                     if not success then
                         print("Update failed.")
                     end
