@@ -1,1 +1,10 @@
 main.lua
+config.lua
+gui.lua
+helper.lua
+pathfinding.lua
+region.lua
+remote.lua
+shapes.lua
+turtle_wrapper.lua
+ui.lua
